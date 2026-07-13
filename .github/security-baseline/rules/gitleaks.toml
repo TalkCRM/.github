@@ -1,0 +1,266 @@
+# Gitleaks v8 Custom Configuration
+# Extended rules: base patterns + Korean-specific + TalkCRM context
+# Date: 2026-07-13
+
+title = "TalkCRM Security Baseline"
+description = "Gitleaks rules extending base patterns with Korean-specific secrets (주민등록번호, 휴대폰, API keys, DB credentials)"
+
+# ==============================================================================
+# 1. KOREAN NATIONAL ID (주민등록번호)
+# ==============================================================================
+[[rules]]
+id = "korean-ssn"
+description = "Korean national ID number (주민등록번호) - 6digits-7digits format"
+regex = '''(?:^|\s|[=:'"]\s*)(\d{6}[-]?\d{7})(?:\s|$|[,;'"])'''
+tags = ["korean", "pii", "high-risk"]
+entropy = 3.5
+keywords = ["주민등록번호", "ssn", "regid", "rg_no", "주민번호"]
+
+[[rules]]
+id = "korean-ssn-dense"
+description = "Korean SSN in dense config/database files (13 consecutive digits)"
+regex = '''(?:password|pwd|secret|key|token|credential)['\"]?\s*[:=]\s*['\"]?(\d{13})['\"]?'''
+tags = ["korean", "pii", "config", "high-risk"]
+entropy = 4.0
+file_regex = '''(?:\.env|config|\.json|\.yml|\.yaml|database|\.sql)$'''
+
+# ==============================================================================
+# 2. KOREAN PHONE NUMBERS
+# ==============================================================================
+[[rules]]
+id = "korean-phone-dense"
+description = "Korean mobile/landline in config files (010-xxxx-xxxx or similar dense)"
+regex = '''(?:phone|tel|mobile|cellular|contact)['\"]?\s*[:=]\s*['\"]?(\+?82[-]?(?:10|11|16|17|18|19|[0-9]{1,2})[-]?\d{3,4}[-]?\d{4})['\"]?'''
+tags = ["korean", "pii", "config"]
+entropy = 3.0
+file_regex = '''(?:\.env|config|\.json|\.yml|\.yaml|database|\.sql)$'''
+
+[[rules]]
+id = "korean-phone-pattern"
+description = "Korean phone patterns: 010-0000-0000, 02-000-0000"
+regex = '''(?:^|\s|[,;])(\+?82[-]?10[-]?\d{3,4}[-]?\d{4})(?:\s|$|[,;])'''
+tags = ["korean", "pii"]
+entropy = 3.0
+
+# ==============================================================================
+# 3. KAKAO (카카오) & NAVER (네이버) API KEYS
+# ==============================================================================
+[[rules]]
+id = "kakao-api-key"
+description = "Kakao/KakaoTalk API key or secret"
+regex = '''(?i)(?:kakao_?(?:key|secret|app_key|app_secret|access_token|api_key))['\"]?\s*[:=]\s*['\"]?([a-f0-9]{32,})(?:['\"])'''
+tags = ["kakao", "api-key", "korean-service"]
+entropy = 3.5
+
+[[rules]]
+id = "kakao-admin-key"
+description = "Kakao Admin Key for server-to-server"
+regex = '''(?i)(?:kakao_admin_key|x_kakao_admin)['\"]?\s*[:=]\s*['\"]?([a-f0-9]{32,})(?:['\"])'''
+tags = ["kakao", "admin-key", "high-risk"]
+entropy = 4.0
+
+[[rules]]
+id = "naver-api-key"
+description = "Naver API key, secret, or access token"
+regex = '''(?i)(?:naver_?(?:client_id|client_secret|api_key|api_secret|access_token))['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9_\-]{20,})(?:['\"])'''
+tags = ["naver", "api-key", "korean-service"]
+entropy = 3.5
+
+[[rules]]
+id = "naver-cloud-key"
+description = "Naver Cloud Platform access key"
+regex = '''(?i)(?:ncloud_access_key|ncloud_secret_key)['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9]{16,})(?:['\"])'''
+tags = ["naver-cloud", "api-key"]
+entropy = 3.5
+
+# ==============================================================================
+# 4. AWS CREDENTIALS (AKIA/ASIA patterns)
+# ==============================================================================
+[[rules]]
+id = "aws-access-key"
+description = "AWS Access Key ID (AKIA/ASIA prefix)"
+regex = '''(?i)((?:AKIA|ASIA)[0-9A-Z]{16})(?:\s|$|[,;'"])'''
+tags = ["aws", "access-key", "high-risk"]
+entropy = 3.0
+
+[[rules]]
+id = "aws-secret-key"
+description = "AWS Secret Access Key (40 char base64-like)"
+regex = '''(?i)(?:aws_secret_access_key|aws_secret_key)['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9/+=]{40})(?:['\"])'''
+tags = ["aws", "secret-key", "high-risk"]
+entropy = 4.5
+
+[[rules]]
+id = "aws-session-token"
+description = "AWS Session Token (temporary credentials)"
+regex = '''(?i)(?:aws_session_token|aws_token)['\"]?\s*[:=]\s*['\"]?([A-Za-z0-9/+]+={0,2})(?:['\"])'''
+tags = ["aws", "session-token"]
+entropy = 4.0
+keywords = ["aws_session_token", "SessionToken"]
+
+# ==============================================================================
+# 5. DATABASE CONNECTION STRINGS
+# ==============================================================================
+[[rules]]
+id = "db-connection-string"
+description = "Generic database connection string (MySQL, PostgreSQL, MSSQL)"
+regex = '''(?i)(?:database_url|db_url|db_connection|connection_string)['\"]?\s*[:=]\s*['\"]?(?:mysql|postgres|mongodb|mssql|oracle)[+\w]*://(?:[^:/@]+):([^@]+)@'''
+tags = ["database", "credential", "high-risk"]
+entropy = 2.5
+
+[[rules]]
+id = "mysql-connection"
+description = "MySQL connection string with credentials"
+regex = '''(?i)(?:mysql|mariadb)://(?:[^:/@]+):([^@/]+)@(?:localhost|127\.0\.0\.1|\w+\.rds\.amazonaws\.com|[\w\-\.]+)(?::\d+)?/'''
+tags = ["mysql", "database", "credential"]
+entropy = 2.5
+
+[[rules]]
+id = "postgresql-connection"
+description = "PostgreSQL connection string with credentials"
+regex = '''(?i)(?:postgres|postgresql)://(?:[^:/@]+):([^@/]+)@(?:localhost|127\.0\.0\.1|[\w\-\.]+)(?::\d+)?(?:/[\w]+)?'''
+tags = ["postgresql", "database", "credential"]
+entropy = 2.5
+
+[[rules]]
+id = "mongodb-connection"
+description = "MongoDB connection URI with credentials"
+regex = '''(?i)mongodb(?:\+srv)?://(?:[^:/@]+):([^@/]+)@(?:[\w\-\.]+)(?::\d+)?(?:/[\w]+)?'''
+tags = ["mongodb", "database", "credential"]
+entropy = 2.5
+
+[[rules]]
+id = "redis-url"
+description = "Redis URL with password"
+regex = '''(?i)(?:redis_url|redis_connection)['\"]?\s*[:=]\s*['\"]?redis://(?:[:@])?(?:[^@]+@)?[\w\-\.]+(?::\d+)?'''
+tags = ["redis", "database", "credential"]
+entropy = 2.0
+
+# ==============================================================================
+# 6. SMTP & EMAIL CREDENTIALS
+# ==============================================================================
+[[rules]]
+id = "smtp-credentials"
+description = "SMTP server credentials (email password)"
+regex = '''(?i)(?:smtp_password|mail_password|email_password)['\"]?\s*[:=]\s*['\"]?([^\s'\"]+)(?:['\"])'''
+tags = ["smtp", "email", "credential"]
+entropy = 2.5
+keywords = ["password", "pwd", "secret"]
+
+[[rules]]
+id = "smtp-auth-string"
+description = "SMTP authentication string with user:pass"
+regex = '''(?i)smtp[s]?://([^:/@]+):([^@/]+)@[\w\-\.]+(?::\d+)?'''
+tags = ["smtp", "email", "credential"]
+entropy = 2.5
+
+[[rules]]
+id = "sendgrid-api-key"
+description = "SendGrid API Key"
+regex = '''(?i)(?:sendgrid_api_key|sendgrid_key)['\"]?\s*[:=]\s*['\"]?(SG\.[a-zA-Z0-9_\-]{20,})(?:['\"])'''
+tags = ["sendgrid", "api-key"]
+entropy = 3.0
+
+# ==============================================================================
+# 7. GENERIC API KEYS & TOKENS
+# ==============================================================================
+[[rules]]
+id = "generic-api-key"
+description = "Generic API key pattern in config"
+regex = '''(?i)(?:api_key|apikey|api-key|x-api-key)['\"]?\s*[:=]\s*['\"]?([a-zA-Z0-9_\-]{16,})(?:['\"])'''
+tags = ["api-key", "generic"]
+entropy = 3.0
+
+[[rules]]
+id = "jwt-token"
+description = "JWT token (eyJ prefix)"
+regex = '''(?:eyJ[a-zA-Z0-9_\-]+\.eyJ[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+)'''
+tags = ["jwt", "token"]
+entropy = 3.5
+
+[[rules]]
+id = "generic-bearer-token"
+description = "Bearer token in code/config"
+regex = '''(?i)(?:bearer|authorization)['\"]?\s*[:=]\s*['\"]?(Bearer\s+[a-zA-Z0-9_\-\.]+)(?:['\"])'''
+tags = ["token", "auth"]
+entropy = 3.0
+
+# ==============================================================================
+# 8. PRIVATE KEY FILES (minimal inline pattern)
+# ==============================================================================
+[[rules]]
+id = "rsa-private-key"
+description = "RSA private key (-----BEGIN PRIVATE KEY-----)"
+regex = '''-----BEGIN\s(?:RSA\s)?PRIVATE\sKEY-----'''
+tags = ["private-key", "encryption", "high-risk"]
+entropy = 0.0
+keywords = ["PRIVATE KEY"]
+
+[[rules]]
+id = "aws-credentials-file-pattern"
+description = "AWS credentials in inline format (aws_access_key_id, aws_secret_access_key)"
+regex = '''(?:aws_access_key_id|aws_secret_access_key)\s*=\s*['"]?[A-Za-z0-9/+=]{16,}['"]?'''
+tags = ["aws", "credentials"]
+entropy = 2.5
+
+# ==============================================================================
+# 9. STRIPE & PAYMENT KEYS
+# ==============================================================================
+[[rules]]
+id = "stripe-secret-key"
+description = "Stripe secret key (sk_live_ or sk_test_)"
+regex = '''(?i)(sk_(?:live|test)_[a-zA-Z0-9]{24,})'''
+tags = ["stripe", "payment", "api-key"]
+entropy = 3.5
+
+[[rules]]
+id = "stripe-publishable-key"
+description = "Stripe publishable key (pk_live_ or pk_test_)"
+regex = '''(?i)(pk_(?:live|test)_[a-zA-Z0-9]{24,})'''
+tags = ["stripe", "payment", "api-key"]
+entropy = 3.0
+
+# ==============================================================================
+# 10. ALLOWLIST (false positives)
+# ==============================================================================
+[allowlist]
+description = "Exclude test fixtures, lock files, deprecated paths"
+
+# Test fixture/mock data
+files = [
+  '''(?:test|spec|fixture|mock)[/\\].*\.(?:json|js|ts|py|yml|yaml)$''',
+  '''\.test\.(?:json|js|ts|py)$''',
+  '''(?:__tests__|tests|\.tests)[/\\].*''',
+  '''package-lock\.json$''',
+  '''yarn\.lock$''',
+  '''Gemfile\.lock$''',
+  '''pipfile\.lock$''',
+  '''poetry\.lock$''',
+  '''DEPRECATED[/\\].*''',
+  '''\.archive[/\\].*''',
+  '''docs[/\\].*\.(md|txt)$''',
+  '''README\.md$''',
+  '''CHANGELOG\.md$''',
+]
+
+# Test values (fake, example, placeholder)
+regexes = [
+  '''(?i)(?:test|example|fake|dummy|placeholder|mock|xxx|TODO|FIXME)[-_]?(?:key|secret|password|token|api)''',
+  '''(?i)Bearer\s+(?:test-secret-token|wrong-token|invalid[-_]?token|fake[-_]?token)''',
+  '''(?:0{8,}|1{8,}|123456(?:78|90)|password123|admin)''',
+  '''(?:https?://)?(?:localhost|127\.0\.0\.1|example\.com|test\.local)''',
+  '''(?:env\.example|\.env\.template|\.env\.sample)''',
+]
+
+# Paths to exclude
+paths = [
+  '''node_modules/''',
+  '''\.git/''',
+  '''\.venv/''',
+  '''venv/''',
+  '''dist/''',
+  '''build/''',
+  '''\.next/''',
+  '''\.cache/''',
+  '''\.idea/''',
+]

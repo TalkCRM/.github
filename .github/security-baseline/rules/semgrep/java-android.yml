@@ -1,0 +1,166 @@
+rules:
+  - id: android-webview-js-interface-injection
+    languages: [java]
+    severity: ERROR
+    message: >
+      WebView에서 setJavaScriptEnabled(true)와 addJavascriptInterface()를 함께 사용하면
+      악성 스크립트가 JS 브리지를 통해 네이티브 코드를 호출해 환자 개인정보(PII)에
+      접근할 수 있습니다. @JavascriptInterface 대상 클래스를 최소화하고, WebView 로드
+      URL을 화이트리스트로 제한하며, 가능하면 targetSdk 17+ 에서 안전한 바인딩만 노출하세요.
+    metadata:
+      category: security
+      cwe: "CWE-749"
+      references:
+        - kisa-js-secure-coding
+    patterns:
+      - pattern-either:
+          - pattern: $WV.setJavaScriptEnabled(true)
+          - pattern: $WV.addJavascriptInterface($OBJ, $NAME)
+
+  - id: android-hardcoded-secret
+    languages: [java]
+    severity: ERROR
+    message: >
+      소스코드에 API 키/비밀번호/토큰이 하드코딩되어 있습니다. APK 디컴파일로 즉시
+      노출되며 CRM/키오스크 서버 인증정보 유출로 이어질 수 있습니다. BuildConfig,
+      Android Keystore 또는 서버 사이드 비밀 관리로 이전하세요.
+    metadata:
+      category: security
+      cwe: "CWE-798"
+    patterns:
+      - pattern-either:
+          - pattern: private static final String $VAR = "$SECRET";
+          - pattern: String $VAR = "$SECRET";
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i)(api[_-]?key|secret|password|passwd|token|access[_-]?key)
+      - metavariable-regex:
+          metavariable: $SECRET
+          regex: ^.{6,}$
+
+  - id: android-cleartext-http
+    languages: [java]
+    severity: WARNING
+    message: >
+      HTTP(cleartext) 통신으로 환자 정보가 평문 전송될 수 있습니다. 모든 서버 통신은
+      https:// 로 강제하고 network_security_config.xml에서 cleartextTrafficPermitted="false"를
+      설정하세요.
+    metadata:
+      category: security
+      cwe: "CWE-319"
+    patterns:
+      - pattern-either:
+          - pattern: "\"http://$HOST\""
+          - pattern: new URL("http://...")
+      - metavariable-regex:
+          metavariable: $HOST
+          regex: ^(?!localhost|127\.0\.0\.1).*$
+
+  - id: android-trust-all-certs
+    languages: [java]
+    severity: ERROR
+    message: >
+      모든 인증서를 신뢰하는 TrustManager/HostnameVerifier 우회 구현은 중간자공격(MITM)에
+      노출되어 환자 데이터가 탈취될 수 있습니다. 커스텀 X509TrustManager/HostnameVerifier에서
+      검증 로직을 항상 true/무검증으로 두지 말고 표준 시스템 신뢰 저장소를 사용하세요.
+    metadata:
+      category: security
+      cwe: "CWE-295"
+    patterns:
+      - pattern-either:
+          - pattern: |
+              new X509TrustManager() {
+                ...
+                public void checkServerTrusted(...) { }
+                ...
+              }
+          - pattern: |
+              new HostnameVerifier() {
+                ...
+                public boolean verify(...) { return true; }
+                ...
+              }
+          - pattern: $SSL.setHostnameVerifier((h, s) -> true)
+
+  - id: android-sqlite-raw-query-concat
+    languages: [java]
+    severity: ERROR
+    message: >
+      문자열 결합으로 구성한 SQL을 rawQuery/execSQL에 전달하면 SQL 인젝션으로 환자
+      진료기록(펜차트) 데이터베이스가 노출될 수 있습니다. 반드시 파라미터 바인딩(?)과
+      selectionArgs를 사용하세요.
+    metadata:
+      category: security
+      cwe: "CWE-89"
+    patterns:
+      - pattern-either:
+          - pattern: $DB.rawQuery($QUERY + $VAR, ...)
+          - pattern: $DB.execSQL($QUERY + $VAR)
+          - pattern: $DB.rawQuery(String.format(...), ...)
+
+  - id: android-external-storage-sensitive-data
+    languages: [java]
+    severity: ERROR
+    message: >
+      외부 저장소(SD카드 등)에 환자 개인정보나 인증정보를 기록하면 타 앱/사용자가
+      권한 없이 접근할 수 있습니다. 내부 저장소(Context.getFilesDir) 또는 EncryptedFile/
+      EncryptedSharedPreferences를 사용하세요.
+    metadata:
+      category: security
+      cwe: "CWE-922"
+    patterns:
+      - pattern-either:
+          - pattern: $CTX.getExternalFilesDir(...)
+          - pattern: Environment.getExternalStorageDirectory(...)
+          - pattern: new FileOutputStream(new File(Environment.getExternalStorageDirectory(), ...))
+
+  - id: android-log-sensitive-data
+    languages: [java]
+    severity: WARNING
+    message: >
+      Log.d/Log.e 등으로 환자명, 주민번호, 전화번호, 토큰과 같은 민감정보를 로그에
+      출력하면 logcat 접근 권한을 가진 다른 앱이나 기기 접근자에게 노출됩니다. 릴리즈
+      빌드에서 민감정보 로깅을 제거하거나 마스킹하세요.
+    metadata:
+      category: security
+      cwe: "CWE-532"
+    patterns:
+      - pattern-either:
+          - pattern: Log.d($TAG, $MSG)
+          - pattern: Log.e($TAG, $MSG)
+          - pattern: Log.i($TAG, $MSG)
+          - pattern: Log.v($TAG, $MSG)
+      - metavariable-regex:
+          metavariable: $MSG
+          regex: (?i).*(patient|주민번호|ssn|phone|token|password|환자).*
+
+  - id: android-exported-component-no-permission
+    languages: [generic]
+    severity: WARNING
+    message: >
+      android:exported="true"로 설정된 Activity/Service/Receiver/Provider가
+      android:permission 없이 노출되면 다른 앱이 임의로 컴포넌트를 실행해 환자 정보
+      조회 화면(펜차트/키오스크)에 우회 접근할 수 있습니다. permission 속성을 지정하거나
+      exported="false"로 제한하세요.
+    metadata:
+      category: security
+      cwe: "CWE-926"
+    paths:
+      include:
+        - "*.xml"
+        - "**/AndroidManifest.xml"
+    pattern-regex: '<(activity|service|receiver|provider)\b(?![^>]*android:permission=)[^>]*android:exported="true"[^>]*>'
+
+  - id: android-webview-load-untrusted-url
+    languages: [java]
+    severity: WARNING
+    message: >
+      외부에서 전달된 값(Intent extra 등)을 그대로 WebView.loadUrl()에 전달하면
+      피싱/JS 인젝션 페이지를 로드해 세션 토큰이나 환자 정보가 탈취될 수 있습니다.
+      URL을 화이트리스트로 검증한 뒤에만 로드하세요.
+    metadata:
+      category: security
+      cwe: "CWE-940"
+    patterns:
+      - pattern: $WV.loadUrl($URL)
+      - pattern-not: $WV.loadUrl("...")

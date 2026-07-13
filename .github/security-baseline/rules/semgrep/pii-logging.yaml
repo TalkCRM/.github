@@ -1,0 +1,18 @@
+rules:
+  - id: talkcrm-pii-in-log
+    message: >-
+      환자 개인정보(PII)로 의심되는 필드명(주민번호/전화번호/이름/생년월일 등)을
+      로그에 직접 출력하고 있습니다. 마스킹 후 로깅하세요. (의료 CRM 최고 리스크 항목)
+    severity: WARNING
+    languages: [python, javascript, typescript, java]
+    metadata:
+      category: security
+      confidence: MEDIUM
+    patterns:
+      - pattern-either:
+          - pattern: console.log(..., $OBJ, ...)
+          - pattern: print(..., $OBJ, ...)
+          - pattern: logger.$METHOD(..., $OBJ, ...)
+      - metavariable-regex:
+          metavariable: $OBJ
+          regex: (?i)(ssn|resident|jumin|phone|patient|birth|social)

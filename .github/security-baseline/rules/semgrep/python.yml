@@ -1,0 +1,433 @@
+rules:
+  # 1. 신뢰할 수 없는 데이터의 역직렬화 - pickle
+  - id: talkcrm-python-pickle-untrusted-deserialization
+    message: >-
+      pickle.load()/loads()로 외부(신뢰할 수 없는) 데이터를 역직렬화하고 있습니다. 조작된 바이트열을
+      역직렬화하면 임의 코드 실행(RCE)으로 이어질 수 있습니다. json 등 안전한 텍스트 직렬화를 사용하거나,
+      불가피할 경우 HMAC으로 무결성을 사전 검증하세요. 의료 CRM에서 환자 PII를 포함한 세션/큐 데이터를
+      다룰 때 특히 위험합니다.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: pickle.load(...)
+          - pattern: pickle.loads(...)
+          - pattern: cPickle.load(...)
+          - pattern: cPickle.loads(...)
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.140 (신뢰할 수 없는 데이터의 역직렬화)"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      subcategory: [vuln]
+      technology: [python]
+
+  # 2. 신뢰할 수 없는 데이터의 역직렬화 - yaml.load 검증 없이
+  - id: talkcrm-python-yaml-unsafe-load
+    message: >-
+      yaml.load()를 Loader 지정 없이(또는 안전하지 않은 Loader로) 호출하면 임의 파이썬 객체 생성 및
+      코드 실행으로 이어질 수 있습니다. yaml.safe_load() 또는 Loader=yaml.SafeLoader를 사용하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern: yaml.load($DATA)
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      owasp: "A08:2021 - Software and Data Integrity Failures"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.140 (신뢰할 수 없는 데이터의 역직렬화)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+
+  # 3. 코드 삽입 - eval/exec/compile
+  - id: talkcrm-python-code-injection-eval-exec
+    message: >-
+      eval()/exec()/compile()에 외부 입력이 흘러들어갈 수 있는 동적 코드 실행 함수를 사용하고
+      있습니다. 검증되지 않은 문자열을 실행하면 임의 코드 실행(RCE)으로 직결됩니다. 동적 코드 실행 함수
+      사용을 원칙적으로 금지하고, 불가피하면 화이트리스트 기반 사전 검증을 적용하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+          - pattern: compile(...)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+    metadata:
+      category: security
+      cwe: "CWE-94: Improper Control of Generation of Code ('Code Injection')"
+      owasp: "A03:2021 - Injection"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.14-18 (코드 삽입)"
+      confidence: MEDIUM
+      likelihood: HIGH
+      impact: HIGH
+
+  # 4. 운영체제 명령어 삽입 - os.system
+  - id: talkcrm-python-os-system-command-injection
+    message: >-
+      os.system() 호출은 셸을 경유하여 명령어를 실행합니다. 입력값에 외부 데이터가 포함되면 OS 명령어
+      삽입(원격 시스템 제어)으로 이어질 수 있습니다. subprocess 모듈을 shell=True 없이 배열 인자로
+      사용하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern: os.system(...)
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.29-32 (운영체제 명령어 삽입)"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+
+  # 5. 운영체제 명령어 삽입 - subprocess shell=True
+  - id: talkcrm-python-subprocess-shell-true
+    message: >-
+      subprocess.run()/Popen()/call()/check_output()에 shell=True가 지정되어 있습니다. 명령어
+      문자열에 외부 입력이 결합되면 OS 명령어 삽입으로 이어집니다. shell=True를 제거하고 명령어/인자를
+      배열로 분리해서 전달하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.check_output(..., shell=True, ...)
+          - pattern: subprocess.check_call(..., shell=True, ...)
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 - Injection"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.29-32 (운영체제 명령어 삽입)"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+
+  # 6. SQL 삽입 - 문자열 포매팅/결합으로 쿼리 생성
+  - id: talkcrm-python-sql-injection-string-format
+    message: >-
+      cursor.execute()에 문자열 포매팅(%, .format(), f-string)이나 문자열 결합(+)으로 만든 동적
+      SQL 쿼리를 전달하고 있습니다. 환자/예약 데이터를 다루는 DB 쿼리에서 SQL 삽입은 개인정보(PII)
+      대량 유출로 직결됩니다. DB API의 파라미터화된 쿼리(바인딩 변수, 두 번째 인자로 파라미터 튜플/딕셔너리
+      전달)를 사용하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: $CURSOR.execute("..." % (...))
+          - pattern: $CURSOR.execute("...".format(...))
+          - pattern: $CURSOR.execute(f"...")
+          - pattern: $CURSOR.execute("..." + $VAR)
+          - pattern: $CURSOR.execute($VAR + "...")
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 - Injection"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.8-12 (SQL 삽입)"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+
+  # 7. 취약한 암호화/해시 알고리즘 사용
+  - id: talkcrm-python-weak-hash-algorithm
+    message: >-
+      MD5/SHA1 등 취약한 해시 알고리즘을 사용하고 있습니다. 충돌 공격에 취약하여 비밀번호 해싱이나
+      무결성 검증 용도로 부적합합니다. SHA-256 이상(hashlib.sha256 등)을 사용하고, 비밀번호는
+      bcrypt/argon2 같은 전용 KDF를 사용하세요.
+    severity: WARNING
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: hashlib.md5(...)
+          - pattern: hashlib.sha1(...)
+          - pattern: Crypto.Hash.MD5.new(...)
+          - pattern: Crypto.Hash.SHA1.new(...)
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      owasp: "A02:2021 - Cryptographic Failures"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.77-81 (취약한 암호화 알고리즘 사용)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: MEDIUM
+
+  # 7b. 취약한 대칭키 암호 알고리즘 (DES/RC4)
+  - id: talkcrm-python-weak-symmetric-cipher
+    message: >-
+      DES/RC4 등 취약한 대칭키 암호 알고리즘을 사용하고 있습니다. 112비트 미만의 키 강도를 가진 알고리즘은
+      현대적 공격에 취약합니다. AES, SEED, 3TDEA 등 112비트 이상 대칭키 암호를 사용하세요.
+    severity: WARNING
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: Crypto.Cipher.DES.new(...)
+          - pattern: Crypto.Cipher.ARC4.new(...)
+          - pattern: DES.new(...)
+          - pattern: ARC4.new(...)
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      owasp: "A02:2021 - Cryptographic Failures"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.77-81 (취약한 암호화 알고리즘 사용)"
+      confidence: HIGH
+      likelihood: LOW
+      impact: HIGH
+
+  # 8. requests verify=False (SSL 인증서 검증 우회)
+  - id: talkcrm-python-requests-ssl-verify-disabled
+    message: >-
+      requests 라이브러리 호출에서 verify=False로 SSL/TLS 인증서 검증을 비활성화하고 있습니다.
+      중간자 공격(MITM)에 노출되어 카카오톡/문자 발송 API, 결제/예약 연동 트래픽이 가로채기 당할 수
+      있습니다. verify=True(기본값)를 유지하거나 신뢰할 수 있는 CA 번들 경로를 명시하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: requests.get(..., verify=False, ...)
+          - pattern: requests.post(..., verify=False, ...)
+          - pattern: requests.put(..., verify=False, ...)
+          - pattern: requests.delete(..., verify=False, ...)
+          - pattern: requests.request(..., verify=False, ...)
+          - pattern: requests.Session(...).request(..., verify=False, ...)
+    metadata:
+      category: security
+      cwe: "CWE-295: Improper Certificate Validation"
+      owasp: "A07:2021 - Identification and Authentication Failures"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.101-104 (부적절한 인증서 유효성 검증)"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+
+  # 9. Flask debug=True in production
+  - id: talkcrm-python-flask-debug-true
+    message: >-
+      Flask app.run(debug=True) 또는 app.debug = True가 설정되어 있습니다. 프로덕션 환경에서 디버그
+      모드는 Werkzeug 대화형 디버거를 통한 임의 코드 실행과 소스코드/환경변수 등 내부 구조 노출로
+      이어질 수 있습니다. 프로덕션에서는 반드시 DEBUG = False로 설정하고 환경변수로 분기하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: $APP.run(..., debug=True, ...)
+          - pattern: $APP.debug = True
+    metadata:
+      category: security
+      cwe: "CWE-489: Active Debug Code"
+      owasp: "A05:2021 - Security Misconfiguration"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.146-148 (제거되지 않고 남은 디버그 코드)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: MEDIUM
+
+  # 9b. Django DEBUG = True
+  - id: talkcrm-python-django-debug-true
+    message: >-
+      Django settings.py에서 DEBUG = True로 설정되어 있습니다. 프로덕션 환경에서는 스택트레이스,
+      환경변수, DB 쿼리 등 민감정보가 오류 페이지에 노출될 수 있습니다. 프로덕션 배포 시 DEBUG = False로
+      설정하고 ALLOWED_HOSTS를 명시적으로 제한하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern: DEBUG = True
+    metadata:
+      category: security
+      cwe: "CWE-489: Active Debug Code"
+      owasp: "A05:2021 - Security Misconfiguration"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.146-148 (제거되지 않고 남은 디버그 코드)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: MEDIUM
+
+  # 10. 경로 조작 - open()에 사용자 입력 직접 전달
+  - id: talkcrm-python-path-traversal-open
+    message: >-
+      open() 등 파일 시스템 접근 함수에 요청 파라미터(request.args/form/json 등)를 경로 식별자로
+      직접 전달하고 있습니다. '../' 등 경로 조작 문자로 시스템 중요 파일이나 다른 환자의 첨부파일에
+      접근할 수 있습니다. 파일명을 화이트리스트로 검증하거나 os.path.basename()으로 정규화하고,
+      허용된 디렉터리 하위인지 검사하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: open(request.args.get(...), ...)
+          - pattern: open(request.form.get(...), ...)
+          - pattern: open(request.args[...], ...)
+          - pattern: open(request.form[...], ...)
+          - pattern: open(request.GET.get(...), ...)
+          - pattern: open(request.POST.get(...), ...)
+    metadata:
+      category: security
+      cwe: "CWE-22: Path Traversal"
+      owasp: "A01:2021 - Broken Access Control"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.18-22 (경로 조작 및 자원 삽입)"
+      confidence: MEDIUM
+      likelihood: HIGH
+      impact: HIGH
+
+  # 11. SSRF - 사용자 입력을 그대로 outbound 요청 URL로 사용
+  - id: talkcrm-python-ssrf-user-controlled-url
+    message: >-
+      requests.get()/post() 등의 요청 URL에 사용자 입력(request.args/form/json)이 검증 없이
+      그대로 전달되고 있습니다. 공격자가 내부망 IP(메타데이터 서버, DB, 관리 콘솔 등)를 지정해 SSRF를
+      유발할 수 있습니다. 목적지 호스트를 화이트리스트로 제한하거나 내부 IP 대역(127.0.0.1, 169.254.,
+      10., 172.16-31., 192.168.)으로의 요청을 차단하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: requests.get(request.args.get(...), ...)
+          - pattern: requests.get(request.form.get(...), ...)
+          - pattern: requests.post(request.args.get(...), ...)
+          - pattern: requests.post(request.form.get(...), ...)
+          - pattern: requests.get(request.GET.get(...), ...)
+          - pattern: requests.get(request.POST.get(...), ...)
+    metadata:
+      category: security
+      cwe: "CWE-918: Server-Side Request Forgery (SSRF)"
+      owasp: "A10:2021 - Server-Side Request Forgery"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.154-156 (DNS lookup에 의존한 보안결정 관련 섹션 인접 항목, SSRF 유형)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+
+  # 12. tempfile 오용 - 예측 가능한 임시파일 경로 (mktemp)
+  - id: talkcrm-python-insecure-tempfile-mktemp
+    message: >-
+      tempfile.mktemp()는 파일 경로만 생성하고 실제 파일은 만들지 않아, 경로 생성과 파일 생성 사이의
+      TOCTOU(Time-Of-Check-Time-Of-Use) 경쟁 조건으로 심볼릭 링크 공격이나 예측 가능한 경로를 통한
+      정보 노출/덮어쓰기가 가능합니다. tempfile.mkstemp() 또는 NamedTemporaryFile()을 사용하세요.
+    severity: WARNING
+    languages: [python]
+    patterns:
+      - pattern: tempfile.mktemp(...)
+    metadata:
+      category: security
+      cwe: "CWE-377: Insecure Temporary File"
+      owasp: "A01:2021 - Broken Access Control"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.18-22 (경로 조작 및 자원 삽입 - 임시파일 취급 부주의 유사 유형)"
+      confidence: HIGH
+      likelihood: LOW
+      impact: MEDIUM
+
+  # 13. 하드코드된 비밀번호/암호화 키
+  - id: talkcrm-python-hardcoded-credentials
+    message: >-
+      소스코드에 비밀번호/API 키/시크릿이 평문으로 하드코딩되어 있습니다. 저장소가 유출되거나 커밋
+      히스토리가 노출되면 DB/메시징 API/키오스크 인증 정보가 그대로 탈취됩니다. 자격증명은 환경변수,
+      비밀관리 서비스(예: AWS Secrets Manager) 등 외부 저장소에서 로드하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: pymysql.connect(..., passwd="...", ...)
+          - pattern: pymysql.connect(..., password="...", ...)
+          - pattern: $X = "..."
+      - metavariable-regex:
+          metavariable: $X
+          regex: (?i)^(password|passwd|secret|api_key|apikey|auth_key|authenticate_key|access_token|secret_key)$
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+            - pattern-not: ""
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      owasp: "A07:2021 - Identification and Authentication Failures"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.86, 110, 130-131 (하드코드된 비밀번호/암호화 키)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+
+  # 14. XXE - lxml/xml.sax 외부 엔티티 허용
+  - id: talkcrm-python-xxe-external-entity-enabled
+    message: >-
+      XML 파서 초기화 시 외부 엔티티 참조(resolve_entities=True 등)를 허용하고 있습니다. 조작된 XML
+      문서로 서버 내부 파일을 읽거나 SSRF를 유발하는 XXE 공격이 가능합니다. DTD 및 외부 엔티티 참조
+      기능을 비활성화(resolve_entities=False)하세요.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: lxml.etree.XMLParser(..., resolve_entities=True, ...)
+          - pattern: etree.XMLParser(..., resolve_entities=True, ...)
+    metadata:
+      category: security
+      cwe: "CWE-611: Improper Restriction of XML External Entity Reference"
+      owasp: "A05:2021 - Security Misconfiguration"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.39 (부적절한 XML 외부 개체 참조)"
+      confidence: HIGH
+      likelihood: LOW
+      impact: HIGH
+
+  # 15. 크로스사이트 요청 위조(CSRF) - Django csrf_exempt로 검증 비활성화
+  - id: talkcrm-python-django-csrf-exempt
+    message: >-
+      Django @csrf_exempt(또는 csrf.exempt)로 뷰의 CSRF 토큰 검증을 비활성화하고 있습니다. 로그인된
+      환자/관리자의 브라우저를 통해 예약 변경·개인정보 수정 같은 상태변경 요청이 위조될 수 있습니다.
+      csrf_exempt를 제거하고 정상 CSRF 토큰 발급/검증을 활성화하세요(외부 웹훅 등 불가피한 경우 서명/토큰
+      기반 별도 인증으로 대체).
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: "@csrf_exempt"
+          - pattern: "@csrf.exempt"
+          - pattern: "@method_decorator(csrf_exempt)"
+    metadata:
+      category: security
+      cwe: "CWE-352: Cross-Site Request Forgery (CSRF)"
+      owasp: "A01:2021 - Broken Access Control"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.48 (크로스사이트 요청 위조)"
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+
+  # 16. Open Redirect - 외부 입력을 그대로 redirect 대상으로 사용
+  - id: talkcrm-python-open-redirect
+    message: >-
+      사용자 입력(request.args/GET/POST/form)을 검증 없이 redirect() 인자로 전달하고 있습니다.
+      공격자가 피싱 사이트로 유도하는 Open Redirect가 가능합니다. 서버 측 화이트리스트로 목적지를
+      제한하거나, 스킴/호스트가 배제된 상대 경로만 허용하세요.
+    severity: WARNING
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: redirect(request.args.get(...))
+          - pattern: redirect(request.GET.get(...))
+          - pattern: redirect(request.POST.get(...))
+          - pattern: redirect(request.form.get(...))
+          - pattern: redirect(request.args[...])
+          - pattern: redirect(request.GET[...])
+    metadata:
+      category: security
+      cwe: "CWE-601: URL Redirection to Untrusted Site (Open Redirect)"
+      owasp: "A01:2021 - Broken Access Control"
+      references:
+        - "KISA Python 시큐어코딩 가이드 2023, p.36 (신뢰되지 않은 URL 주소로 자동접속 연결)"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: MEDIUM

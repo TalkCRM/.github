@@ -1,0 +1,197 @@
+rules:
+  - id: php-mysql-query-string-concat-sqli
+    languages: [php]
+    severity: ERROR
+    message: >
+      SQL 문자열을 직접 결합(concatenation)하여 mysql_query/mysqli_query에 전달하고 있습니다.
+      SQL Injection 취약점이 발생할 수 있으므로 PDO/mysqli의 Prepared Statement(바인드 파라미터)를 사용하세요.
+      환자 PII가 포함된 쿼리(예약/차트/메시지 이력)일 경우 개인정보 유출로 직결됩니다.
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 Injection"
+      references:
+        - https://www.kisa.or.kr (KISA 시큐어코딩 가이드 - SQL 삽입)
+    patterns:
+      - pattern-either:
+          - pattern: mysql_query("..." . $X . "...")
+          - pattern: mysqli_query($CONN, "..." . $X . "...")
+          - pattern: $DB->query("..." . $X . "...")
+
+  - id: php-eval-usage
+    languages: [php]
+    severity: ERROR
+    message: >
+      eval() 사용이 발견되었습니다. 사용자 입력이 eval에 도달하면 임의 코드 실행(RCE)으로 이어질 수 있습니다.
+      가능한 경우 eval을 제거하고, 불가피하면 입력을 화이트리스트로 엄격히 검증하세요.
+    metadata:
+      category: security
+      cwe: "CWE-95: Eval Injection"
+      owasp: "A03:2021 Injection"
+    patterns:
+      - pattern: eval(...)
+
+  - id: php-dynamic-include-require
+    languages: [php]
+    severity: ERROR
+    message: >
+      변수 기반의 동적 경로로 include/require를 호출하고 있습니다. Local/Remote File Inclusion(LFI/RFI)
+      취약점으로 이어질 수 있습니다. 경로를 화이트리스트로 검증하거나 상수/고정 경로를 사용하세요.
+    metadata:
+      category: security
+      cwe: "CWE-98: PHP File Inclusion"
+      owasp: "A03:2021 Injection"
+    patterns:
+      - pattern-either:
+          - pattern: include($X)
+          - pattern: include_once($X)
+          - pattern: require($X)
+          - pattern: require_once($X)
+      - metavariable-pattern:
+          metavariable: $X
+          patterns:
+            - pattern-not: "\"...\""
+
+  - id: php-command-injection
+    languages: [php]
+    severity: ERROR
+    message: >
+      exec/system/shell_exec/passthru/popen 등 명령 실행 함수에 사용자 제어 가능한 값이 전달될 수 있습니다.
+      OS Command Injection 위험이 있으므로 escapeshellarg/escapeshellcmd 적용 또는 명령 실행 자체를 제거하세요.
+    metadata:
+      category: security
+      cwe: "CWE-78: OS Command Injection"
+      owasp: "A03:2021 Injection"
+    patterns:
+      - pattern-either:
+          - pattern: exec($X, ...)
+          - pattern: system($X, ...)
+          - pattern: shell_exec($X)
+          - pattern: passthru($X, ...)
+          - pattern: popen($X, ...)
+          - pattern: proc_open($X, ...)
+          - pattern: "`...`"
+
+  - id: php-unserialize-untrusted-data
+    languages: [php]
+    severity: ERROR
+    message: >
+      외부 입력을 unserialize()로 역직렬화하고 있습니다. PHP Object Injection을 통한 임의 코드 실행/
+      파일 조작으로 이어질 수 있습니다. json_decode로 대체하거나 allowed_classes 옵션으로 제한하세요.
+    metadata:
+      category: security
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+    patterns:
+      - pattern-either:
+          - pattern: unserialize($_GET[...])
+          - pattern: unserialize($_POST[...])
+          - pattern: unserialize($_REQUEST[...])
+          - pattern: unserialize($_COOKIE[...])
+          - pattern: unserialize(file_get_contents(...))
+
+  - id: php-file-upload-missing-validation
+    languages: [php]
+    severity: WARNING
+    message: >
+      move_uploaded_file() 호출 시 확장자/MIME 타입 검증 없이 $_FILES 값을 그대로 사용하는 것으로 보입니다.
+      임의 파일 업로드(웹셸 등) 취약점이 발생할 수 있으니 화이트리스트 확장자 검사, MIME 검증,
+      업로드 디렉토리 실행권한 제거를 적용하세요. 환자 첨부파일(엑스레이/서류) 업로드 경로에서 특히 중요합니다.
+    metadata:
+      category: security
+      cwe: "CWE-434: Unrestricted Upload of File with Dangerous Type"
+      owasp: "A04:2021 Insecure Design"
+    patterns:
+      - pattern: move_uploaded_file($_FILES[...][...], $DEST)
+
+  - id: php-echo-reflected-xss
+    languages: [php]
+    severity: WARNING
+    message: >
+      $_GET/$_POST/$_REQUEST 값을 htmlspecialchars 등 이스케이프 없이 echo/print로 즉시 출력하고 있습니다.
+      Reflected XSS 취약점이 발생할 수 있으므로 출력 전 htmlspecialchars($X, ENT_QUOTES, 'UTF-8')를 적용하세요.
+    metadata:
+      category: security
+      cwe: "CWE-79: Cross-site Scripting"
+      owasp: "A03:2021 Injection"
+    patterns:
+      - pattern-either:
+          - pattern: echo $_GET[$KEY];
+          - pattern: echo $_POST[$KEY];
+          - pattern: echo $_REQUEST[$KEY];
+          - pattern: print $_GET[$KEY];
+          - pattern: print $_POST[$KEY];
+          - pattern: print($_GET[$KEY]);
+          - pattern: print($_POST[$KEY]);
+
+  - id: php-weak-hash-algorithm
+    languages: [php]
+    severity: WARNING
+    message: >
+      md5() 또는 sha1()을 비밀번호/토큰 등 민감 정보 해시에 사용하고 있는 것으로 보입니다.
+      두 알고리즘 모두 충돌/역산에 취약하므로 password_hash()(bcrypt/argon2) 또는 hash_hmac('sha256', ...)로 대체하세요.
+    metadata:
+      category: security
+      cwe: "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+      owasp: "A02:2021 Cryptographic Failures"
+    patterns:
+      - pattern-either:
+          - pattern: md5($PW)
+          - pattern: sha1($PW)
+    options:
+      symbolic_propagation: true
+
+  - id: php-extract-usage
+    languages: [php]
+    severity: WARNING
+    message: >
+      extract()로 외부 입력(배열)을 무분별하게 변수로 전개하고 있습니다. 변수 오염(Variable Overwrite)을 통해
+      인증 우회, 로직 변조 등으로 이어질 수 있습니다. EXTR_SKIP 옵션과 화이트리스트 키 제한을 적용하거나
+      명시적 변수 할당으로 대체하세요.
+    metadata:
+      category: security
+      cwe: "CWE-473: PHP External Variable Modification"
+      owasp: "A08:2021 Software and Data Integrity Failures"
+    patterns:
+      - pattern-either:
+          - pattern: extract($_GET)
+          - pattern: extract($_POST)
+          - pattern: extract($_REQUEST)
+          - pattern: extract($_COOKIE)
+          - pattern: extract(...)
+
+  - id: php-direct-superglobal-in-sql
+    languages: [php]
+    severity: ERROR
+    message: >
+      $_GET/$_POST/$_REQUEST 값이 검증/이스케이프 없이 SQL 쿼리 문자열에 직접 삽입되고 있습니다.
+      SQL Injection 위험이 매우 높으므로 Prepared Statement로 즉시 전환하세요.
+    metadata:
+      category: security
+      cwe: "CWE-89: SQL Injection"
+      owasp: "A03:2021 Injection"
+    patterns:
+      - pattern-either:
+          - pattern: mysql_query("..." . $_GET[...] . "...")
+          - pattern: mysql_query("..." . $_POST[...] . "...")
+          - pattern: mysql_query("..." . $_REQUEST[...] . "...")
+          - pattern: mysqli_query($CONN, "..." . $_GET[...] . "...")
+          - pattern: mysqli_query($CONN, "..." . $_POST[...] . "...")
+          - pattern: "\"SELECT ...\" . $_GET[...]"
+          - pattern: "\"SELECT ...\" . $_POST[...]"
+
+  - id: php-hardcoded-db-credentials
+    languages: [php]
+    severity: WARNING
+    message: >
+      DB 접속 정보(호스트/계정/비밀번호)가 소스코드에 하드코딩되어 있습니다. 환경변수(getenv) 또는
+      비밀관리 서비스로 이전하고, 이미 커밋된 자격증명은 즉시 로테이션하세요.
+    metadata:
+      category: security
+      cwe: "CWE-798: Use of Hard-coded Credentials"
+      owasp: "A07:2021 Identification and Authentication Failures"
+    patterns:
+      - pattern-either:
+          - pattern: mysqli_connect("...", "...", "...")
+          - pattern: new mysqli("...", "...", "...")
+          - pattern: new PDO("mysql:...", "...", "...")

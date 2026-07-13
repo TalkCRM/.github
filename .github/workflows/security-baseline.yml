@@ -1,0 +1,21 @@
+name: Security Baseline
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+# 철통보안: Security 탭(GHAS) 미사용 — 결과는 아티팩트+건수요약만.
+# pull-requests: write 는 건수 요약 코멘트 upsert용.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  security-baseline:
+    # 조직 커스텀 룰은 rollout.sh가 .github/security-baseline/rules/ 에 벤더링 — 시크릿 불필요
+    uses: TalkCRM/smnt-security-baseline/.github/workflows/security-baseline.yml@main
+    with:
+      languages: "auto"
+      exclude-paths: "node_modules/**,dist/**,build/**,vendor/**"
